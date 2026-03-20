@@ -1,0 +1,64 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "openclaw-desktop",
+
+  "version": "0.1.37",
+  "identifier": "com.openclaw.desktop",
+  "build": {
+    "beforeDevCommand": "npm run dev",
+    "devUrl": "http://127.0.0.1:1420",
+    "beforeBuildCommand": "npm run build",
+    "frontendDist": "../dist"
+  },
+  "app": {
+    "windows": [
+      {
+        "title": "openclaw-desktop",
+        "width": 1200,
+        "height": 840,
+        "resizable": true
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "createUpdaterArtifacts": true,
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "targets": [
+      "appimage",
+      "deb",
+      "dmg",
+      "msi",
+      "rpm"
+    ],
+    "resources": [
+      "bundle/resources/**/*"
+    ],
+    "windows": {
+      "wix": {
+        "upgradeCode": "FAE40539-2F5F-4BE7-9F1F-0C20545329DB"
+      }
+    }
+  },
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/daxiondi/openclaw-desktop/releases/latest/download/latest.json",
+        "https://ghfast.top/https://github.com/daxiondi/openclaw-desktop/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDgzMjgzNUE0RUQ2QTk5OEYKUldTUG1XcnRwRFVvZzNZV2ZGTVNEZzdJb0puOXRndzl2dGF1NjMyRlM3dTh0dUlwNlJzaDZEM2kK",
+      "windows": {
+        "installMode": "passive"
+      }
+    }
+  }
+}
