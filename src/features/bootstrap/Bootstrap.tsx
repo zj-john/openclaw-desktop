@@ -4,13 +4,12 @@ import { useTranslation } from "react-i18next";
 import { openclawBridge } from "../../bridge/openclawBridge";
 
 type Props = {
-  onStatus: (message: string) => void;
-  onReady: () => void;
+  onReady: (onboardingDone: boolean) => void;
 };
 
-export default function Bootstrap({ onStatus, onReady }: Props) {
+export default function Bootstrap({ onReady }: Props) {
   const { t } = useTranslation();
-  const [running, setRunning] = useState(false);
+  const [running, setRunning] = useState(true); // 默认 true，因为 useEffect 会立即执行 runBootstrap
   const [error, setError] = useState("");
   const [logs, setLogs] = useState<string[]>([]);
   const [liveLogs, setLiveLogs] = useState<string[]>([]);
@@ -25,25 +24,21 @@ export default function Bootstrap({ onStatus, onReady }: Props) {
     setLogs([]);
     setLiveLogs([]);
     setElapsedSec(0);
-    onStatus(t("status.bootstrap.running"));
 
     try {
       const result = await openclawBridge.bootstrapOpenClaw();
       setLogs(result.logs);
       setLiveLogs(result.logs);
       if (result.ready) {
-        onStatus(t("status.bootstrap.ready"));
-        onReady();
+        onReady(result.onboardingDone ?? false);
         return;
       }
 
       const message = result.error ?? result.message;
-      setError(message);
-      onStatus(`${t("status.bootstrap.failed")}: ${message}`);
+      setError(message || "未知错误");
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      setError(message);
-      onStatus(`${t("status.bootstrap.failed")}: ${message}`);
+      setError(message || "启动异常");
     } finally {
       setRunning(false);
     }
@@ -55,14 +50,12 @@ export default function Bootstrap({ onStatus, onReady }: Props) {
     setLogs([]);
     setLiveLogs([]);
     setElapsedSec(0);
-    onStatus(t("status.bootstrap.running"));
 
     try {
       const selectedPath = await openclawBridge.selectWindowsPortableBundleFile();
       if (!selectedPath) {
         const message = t("bootstrap.manualCancelled");
         setError(message);
-        onStatus(message);
         return;
       }
 
@@ -70,18 +63,15 @@ export default function Bootstrap({ onStatus, onReady }: Props) {
       setLogs(result.logs);
       setLiveLogs(result.logs);
       if (result.ready) {
-        onStatus(t("status.bootstrap.ready"));
-        onReady();
+        onReady(result.onboardingDone ?? false);
         return;
       }
 
       const message = result.error ?? result.message;
-      setError(message);
-      onStatus(`${t("status.bootstrap.failed")}: ${message}`);
+      setError(message || "未知错误");
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
-      setError(message);
-      onStatus(`${t("status.bootstrap.failed")}: ${message}`);
+      setError(message || "启动异常");
     } finally {
       setRunning(false);
     }
@@ -107,6 +97,8 @@ export default function Bootstrap({ onStatus, onReady }: Props) {
           return;
         }
         unlisten = fn;
+      }).catch(() => {
+        // listen 失败时忽略，不影响 bootstrap 流程
       });
     }
 
@@ -118,6 +110,7 @@ export default function Bootstrap({ onStatus, onReady }: Props) {
         unlisten();
       }
     };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {

@@ -5,22 +5,14 @@ import type { BrowserModeStatus, BrowserRelayDiagnostic, BrowserRelayStatus, Fei
 import feedbackGroupQr from "../../assets/wechat.jpg";
 
 type Props = {
-  onStatus: (message: string) => void;
   onBack: () => void;
 };
 
-type ShellTab = "help" | "official" | "settings" | "feishu";
+type ShellTab = "help" | "settings" | "feishu";
 
-const officialWebFallbackUrl = "http://127.0.0.1:18789/";
-
-export default function Shell({ onStatus, onBack }: Props) {
+export default function Shell({ onBack }: Props) {
   const { t } = useTranslation();
   const [activeTab, setActiveTab] = useState<ShellTab>("settings");
-  const [officialWebUrl, setOfficialWebUrl] = useState(officialWebFallbackUrl);
-  const [officialReady, setOfficialReady] = useState(false);
-  const [officialLoading, setOfficialLoading] = useState(false);
-  const [officialOpening, setOfficialOpening] = useState(false);
-  const [officialError, setOfficialError] = useState("");
   const [browserMode, setBrowserMode] = useState<BrowserModeStatus | null>(null);
   const [selectedMode, setSelectedMode] = useState<"openclaw" | "chrome">("openclaw");
   const [settingsLoading, setSettingsLoading] = useState(false);
@@ -40,57 +32,6 @@ export default function Shell({ onStatus, onBack }: Props) {
   const [feishuAppId, setFeishuAppId] = useState("");
   const [feishuAppSecret, setFeishuAppSecret] = useState("");
 
-  async function ensureOfficialWebReady() {
-    setOfficialLoading(true);
-    setOfficialError("");
-    onStatus(t("status.shell.official.preparing"));
-
-    try {
-      const result = await openclawBridge.ensureOfficialWebReady();
-      setOfficialWebUrl(result.url || officialWebFallbackUrl);
-      setOfficialReady(result.ready);
-      if (result.ready) {
-        onStatus(t("status.shell.official"));
-        return true;
-      } else {
-        const message = [result.error ?? result.message, result.commandHint].filter(Boolean).join(" | ");
-        setOfficialError(message);
-        onStatus(`${t("status.error")}: ${message}`);
-        return false;
-      }
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setOfficialError(message);
-      setOfficialReady(false);
-      onStatus(`${t("status.error")}: ${message}`);
-      return false;
-    } finally {
-      setOfficialLoading(false);
-    }
-  }
-
-  async function openOfficialWebWindow() {
-    setOfficialOpening(true);
-    setOfficialError("");
-
-    try {
-      const result = await openclawBridge.openOfficialWebWindow();
-      setOfficialWebUrl(result.url || officialWebFallbackUrl);
-      onStatus(t("status.shell.official.opened"));
-      return true;
-    } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      setOfficialError(message);
-      onStatus(`${t("status.error")}: ${message}`);
-      return false;
-    } finally {
-      setOfficialOpening(false);
-    }
-  }
-
-  function maskOfficialWebUrl(url: string) {
-    return url.replace(/([#?&]token=)[^&]+/i, "$1***");
-  }
 
   function toModeText(mode: string) {
     return mode === "chrome"
@@ -108,7 +49,6 @@ export default function Shell({ onStatus, onBack }: Props) {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setSettingsError(message);
-      onStatus(`${t("status.error")}: ${message}`);
     } finally {
       setSettingsLoading(false);
     }
@@ -121,11 +61,9 @@ export default function Shell({ onStatus, onBack }: Props) {
       const result = await openclawBridge.setBrowserMode(selectedMode);
       setBrowserMode(result);
       setSelectedMode(result.mode === "chrome" ? "chrome" : "openclaw");
-      onStatus(t("status.shell.browserMode.saved", { mode: toModeText(result.mode) }));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setSettingsError(message);
-      onStatus(`${t("status.error")}: ${message}`);
     } finally {
       setSettingsSaving(false);
     }
@@ -140,7 +78,6 @@ export default function Shell({ onStatus, onBack }: Props) {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setRelayError(message);
-      onStatus(`${t("status.error")}: ${message}`);
     } finally {
       setRelayLoading(false);
     }
@@ -149,19 +86,17 @@ export default function Shell({ onStatus, onBack }: Props) {
   async function prepareRelay() {
     setRelayPreparing(true);
     setRelayError("");
-    onStatus(t("status.shell.relay.preparing"));
     try {
       const result = await openclawBridge.prepareBrowserRelay();
       setRelayStatus(result);
       if (result.installed) {
-        onStatus(t("status.shell.relay.ready"));
+        // ready
       } else {
-        onStatus(`${t("status.error")}: ${result.error || result.message}`);
+        // error
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setRelayError(message);
-      onStatus(`${t("status.error")}: ${message}`);
     } finally {
       setRelayPreparing(false);
     }
@@ -170,15 +105,12 @@ export default function Shell({ onStatus, onBack }: Props) {
   async function diagnoseRelay() {
     setRelayDiagnosing(true);
     setRelayError("");
-    onStatus(t("status.shell.relay.diagnosing"));
     try {
       const result = await openclawBridge.diagnoseBrowserRelay();
       setRelayDiagnostic(result);
-      onStatus(t("status.shell.relay.diagnosed"));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setRelayError(message);
-      onStatus(`${t("status.error")}: ${message}`);
     } finally {
       setRelayDiagnosing(false);
     }
@@ -196,7 +128,6 @@ export default function Shell({ onStatus, onBack }: Props) {
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setFeishuError(message);
-      onStatus(`${t("status.error")}: ${message}`);
     } finally {
       setFeishuLoading(false);
     }
@@ -211,12 +142,11 @@ export default function Shell({ onStatus, onBack }: Props) {
       if (result.error) {
         setFeishuError(result.error);
       } else {
-        onStatus(t("status.shell.feishu.installed"));
+        // installed
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setFeishuError(message);
-      onStatus(`${t("status.error")}: ${message}`);
     } finally {
       setFeishuInstalling(false);
     }
@@ -232,12 +162,11 @@ export default function Shell({ onStatus, onBack }: Props) {
       if (result.error) {
         setFeishuError(result.error);
       } else {
-        onStatus(t("status.shell.feishu.saved"));
+        // saved
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setFeishuError(message);
-      onStatus(`${t("status.error")}: ${message}`);
     } finally {
       setFeishuSaving(false);
     }
@@ -245,35 +174,18 @@ export default function Shell({ onStatus, onBack }: Props) {
 
   function switchToFeishuTab() {
     setActiveTab("feishu");
-    onStatus(t("status.shell.feishu"));
   }
 
   function switchToHelpTab() {
     setActiveTab("help");
-    onStatus(t("status.shell.help"));
-  }
-
-  async function switchToOfficialTab() {
-    const ready = officialReady || (await ensureOfficialWebReady());
-    if (!ready) {
-      setActiveTab("official");
-      return;
-    }
-
-    const opened = await openOfficialWebWindow();
-    if (!opened) {
-      setActiveTab("official");
-    }
   }
 
   function switchToSettingsTab() {
     setActiveTab("settings");
-    onStatus(t("status.shell.settings"));
   }
 
   useEffect(() => {
     switchToSettingsTab();
-    void ensureOfficialWebReady();
     void loadBrowserModeStatus();
     void loadRelayStatus();
     void loadFeishuStatus();
@@ -288,13 +200,6 @@ export default function Shell({ onStatus, onBack }: Props) {
           onClick={switchToHelpTab}
         >
           {t("shell.tab.help")}
-        </button>
-        <button
-          type="button"
-          className={`shell-tab ${activeTab === "official" ? "is-active" : ""}`}
-          onClick={() => void switchToOfficialTab()}
-        >
-          {t("shell.tab.official")}
         </button>
         <button
           type="button"
@@ -402,36 +307,6 @@ export default function Shell({ onStatus, onBack }: Props) {
               <p className="hint">{t("shell.feedback.desc")}</p>
               <img className="feedback-qr" src={feedbackGroupQr} alt={t("shell.feedback.alt")} />
             </section>
-          </div>
-        ) : activeTab === "official" ? (
-          <div className="shell-custom panel">
-            <h2>{t("shell.official.title")}</h2>
-            <p>{t("shell.official.desc")}</p>
-            <p className="hint">{t("shell.official.switchHint")}</p>
-            {officialLoading ? <div className="status-chip">{t("shell.official.loading")}</div> : null}
-            {officialError ? (
-              <div className="status-chip warn">
-                {t("shell.official.unavailable")}: {officialError}
-              </div>
-            ) : officialReady ? (
-              <div className="status-chip success">{t("shell.official.ready")}</div>
-            ) : null}
-            <p className="hint">
-              URL: <code>{maskOfficialWebUrl(officialWebUrl)}</code>
-            </p>
-            <div className="action-row">
-              <button
-                type="button"
-                className="primary"
-                onClick={() => void openOfficialWebWindow()}
-                disabled={officialOpening || officialLoading}
-              >
-                {t("shell.official.open")}
-              </button>
-              <button type="button" onClick={() => void ensureOfficialWebReady()} disabled={officialLoading || officialOpening}>
-                {t("shell.official.retry")}
-              </button>
-            </div>
           </div>
         ) : activeTab === "feishu" ? (
           <div className="shell-custom panel">

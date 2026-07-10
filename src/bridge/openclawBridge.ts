@@ -6,16 +6,23 @@ import type {
   BootstrapStatus,
   CodexConnectivityStatus,
   CodexAuthStatus,
+  EnterpriseSkillsConfig,
   FeishuChannelStatus,
+  GetEnterpriseSkillsResult,
   LocalCodexReuseResult,
   LocalOAuthToolStatus,
+  OpenClawWebUrlResult,
+  OpenEnterpriseSettingsResult,
   OpenOfficialWebResult,
   OllamaApplyResult,
   OfficialWebStatus,
   OAuthLoginResult,
   OAuthProvider,
   OllamaStatus,
-  OpenClawBridge
+  OpenClawBridge,
+  SaveChannelConfigResult,
+  SkipChannelConfigResult,
+  SwitchToOpenClawUiResult
 } from "./types";
 
 const fallbackProviders: OAuthProvider[] = [
@@ -217,6 +224,7 @@ export const openclawBridge: OpenClawBridge = {
         ready: false,
         installed: false,
         initialized: false,
+        onboardingDone: false,
         web: {
           ready: false,
           installed: false,
@@ -248,6 +256,7 @@ export const openclawBridge: OpenClawBridge = {
         ready: false,
         installed: false,
         initialized: false,
+        onboardingDone: false,
         web: {
           ready: false,
           installed: false,
@@ -461,5 +470,111 @@ export const openclawBridge: OpenClawBridge = {
       } satisfies FeishuChannelStatus;
     }
     return invoke<FeishuChannelStatus>("save_feishu_channel_config", { appId, appSecret });
+  },
+
+  async switchToOpenClawUi() {
+    if (!isTauriRuntime()) {
+      return {
+        switched: true,
+        detail: "Browser runtime: 模拟切换成功（仅原生环境生效）。"
+      } satisfies SwitchToOpenClawUiResult;
+    }
+
+    return invoke<SwitchToOpenClawUiResult>("switch_to_openclaw_ui");
+  },
+
+  async openEnterpriseSettings() {
+    if (!isTauriRuntime()) {
+      return {
+        opened: true,
+        detail: "Browser runtime: 模拟打开企业设置（仅原生环境生效）。"
+      } satisfies OpenEnterpriseSettingsResult;
+    }
+
+    return invoke<OpenEnterpriseSettingsResult>("open_enterprise_settings");
+  },
+
+  async saveChannelConfig(channelId: string, configJson: string) {
+    if (!isTauriRuntime()) {
+      return {
+        channelId,
+        enabled: true,
+        configured: true
+      } satisfies SaveChannelConfigResult;
+    }
+    return invoke<SaveChannelConfigResult>("save_channel_config", { channelId, configJson });
+  },
+
+  async skipChannelConfig() {
+    if (!isTauriRuntime()) {
+      return { skipped: true, message: "已跳过（模拟）" } satisfies SkipChannelConfigResult;
+    }
+    return invoke<SkipChannelConfigResult>("skip_channel_config");
+  },
+
+  async getEnterpriseSkills() {
+    if (!isTauriRuntime()) {
+      // 浏览器运行时返回内置默认配置
+      const fallbackConfig: EnterpriseSkillsConfig = {
+        version: 1,
+        lastUpdated: "2026-07-09",
+        categories: [
+          {
+            id: "core",
+            name: "核心能力",
+            description: "企业必备的基础功能",
+            skills: [
+              { id: "coding-agent", name: "编程助手", required: true, reason: "提供代码生成和调试能力", defaultEnabled: true },
+              { id: "summarize", name: "内容摘要", required: true, reason: "自动总结文档和对话", defaultEnabled: true },
+              { id: "taskflow-inbox-triage", name: "任务管理", defaultEnabled: true }
+            ]
+          },
+          {
+            id: "productivity",
+            name: "效率工具",
+            description: "提升工作效率的辅助工具",
+            skills: [
+              { id: "notion", name: "Notion 集成" },
+              { id: "obsidian", name: "Obsidian 笔记" },
+              { id: "github", name: "GitHub 操作", defaultEnabled: true }
+            ]
+          },
+          {
+            id: "communication",
+            name: "通讯协作",
+            description: "与 IM 平台集成",
+            skills: [
+              { id: "imsg", name: "iMessage", platform: "macOS only" },
+              { id: "healthcheck", name: "健康检查", defaultEnabled: true }
+            ]
+          }
+        ],
+        blacklist: [
+          { id: "meme-maker", reason: "非生产力工具" },
+          { id: "camsnap", reason: "涉及摄像头权限，隐私风险" },
+          { id: "peekaboo", reason: "屏幕监控功能，违反隐私政策" }
+        ]
+      };
+      return { config: fallbackConfig } satisfies GetEnterpriseSkillsResult;
+    }
+    return invoke<GetEnterpriseSkillsResult>("get_enterprise_skills");
+  },
+
+  async markOnboardingCompleted() {
+    if (!isTauriRuntime()) {
+      return { completed: true, message: "Onboarding marked (dev mode)" };
+    }
+    return invoke<{ completed: boolean; message: string }>("mark_onboarding_completed");
+  },
+
+  async getOpenClawWebUrl() {
+    if (!isTauriRuntime()) {
+      return {
+        url: "http://127.0.0.1:18789/",
+        ready: false,
+        running: false
+      } satisfies OpenClawWebUrlResult;
+    }
+    return invoke<OpenClawWebUrlResult>("get_openclaw_web_url");
   }
 };

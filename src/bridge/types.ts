@@ -77,6 +77,7 @@ export type BootstrapStatus = {
   ready: boolean;
   installed: boolean;
   initialized: boolean;
+  onboardingDone: boolean;
   web: OfficialWebStatus;
   message: string;
   logs: string[];
@@ -121,6 +122,68 @@ export type FeishuChannelStatus = {
   error?: string;
 };
 
+export type SwitchToOpenClawUiResult = {
+  switched: boolean;
+  detail: string;
+};
+
+export type OpenEnterpriseSettingsResult = {
+  opened: boolean;
+  detail: string;
+};
+
+export type SaveChannelConfigResult = {
+  channelId: string;
+  enabled: boolean;
+  configured: boolean;
+};
+
+export type SkipChannelConfigResult = {
+  skipped: boolean;
+  message: string;
+};
+
+/** Skills 白名单相关类型 */
+export type EnterpriseSkillDef = {
+  id: string;
+  name: string;
+  required?: boolean;
+  reason?: string;
+  defaultEnabled?: boolean;
+  description?: string;
+  platform?: string;
+};
+
+export type EnterpriseSkillCategory = {
+  id: string;
+  name: string;
+  description: string;
+  skills: EnterpriseSkillDef[];
+};
+
+export type EnterpriseBlacklistItem = {
+  id: string;
+  reason: string;
+};
+
+export type EnterpriseSkillsConfig = {
+  version: number;
+  lastUpdated: string;
+  categories: EnterpriseSkillCategory[];
+  blacklist: EnterpriseBlacklistItem[];
+};
+
+export type GetEnterpriseSkillsResult = {
+  config: EnterpriseSkillsConfig;
+};
+
+/** OpenClaw Web UI URL 返回类型 */
+export type OpenClawWebUrlResult = {
+  url: string;
+  ready: boolean;
+  running: boolean;
+};
+
 export type OpenClawBridge = {
   listOAuthProviders: () => Promise<OAuthProvider[]>;
   detectLocalOAuthTools: () => Promise<LocalOAuthToolStatus[]>;
@@ -149,4 +212,12 @@ export type OpenClawBridge = {
   getFeishuChannelStatus: () => Promise<FeishuChannelStatus>;
   installFeishuPlugin: () => Promise<FeishuChannelStatus>;
   saveFeishuChannelConfig: (appId: string, appSecret: string) => Promise<FeishuChannelStatus>;
+  switchToOpenClawUi: () => Promise<SwitchToOpenClawUiResult>;
+  openEnterpriseSettings: () => Promise<OpenEnterpriseSettingsResult>;
+  saveChannelConfig: (channelId: string, configJson: string) => Promise<SaveChannelConfigResult>;
+  skipChannelConfig: () => Promise<SkipChannelConfigResult>;
+  getEnterpriseSkills: () => Promise<GetEnterpriseSkillsResult>;
+  markOnboardingCompleted: () => Promise<{ completed: boolean; message: string }>;
+  /** 获取 OpenClaw Web UI 的完整 URL（含 auth token），用于内嵌显示 */
+  getOpenClawWebUrl: () => Promise<OpenClawWebUrlResult>;
 };

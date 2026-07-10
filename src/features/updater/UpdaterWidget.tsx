@@ -4,7 +4,7 @@ import { check, type DownloadEvent, type Update } from "@tauri-apps/plugin-updat
 import { relaunch } from "@tauri-apps/plugin-process";
 
 type Props = {
-  onStatus: (message: string) => void;
+  // 无需 onStatus 回调，内部静默处理
 };
 
 type Phase = "idle" | "checking" | "available" | "none" | "downloading" | "error";
@@ -13,7 +13,7 @@ function isTauriRuntime(): boolean {
   return typeof window !== "undefined" && typeof window.__TAURI_INTERNALS__ !== "undefined";
 }
 
-export default function UpdaterWidget({ onStatus }: Props) {
+export default function UpdaterWidget(_props: Props) {
   const { t } = useTranslation();
   const supported = useMemo(() => isTauriRuntime(), []);
   const updateRef = useRef<Update | null>(null);
@@ -38,9 +38,6 @@ export default function UpdaterWidget({ onStatus }: Props) {
 
     setPhase("checking");
     setErrorText("");
-    if (manual) {
-      onStatus(t("status.update.checking"));
-    }
 
     try {
       const update = await check({ timeout: 20000 });
@@ -48,20 +45,15 @@ export default function UpdaterWidget({ onStatus }: Props) {
         updateRef.current = update;
         setLatestVersion(update.version);
         setPhase("available");
-        onStatus(t("status.update.available", { version: update.version }));
       } else {
         updateRef.current = null;
         setLatestVersion("");
         setPhase(manual ? "none" : "idle");
-        if (manual) {
-          onStatus(t("status.update.none"));
-        }
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setErrorText(message);
       setPhase("error");
-      onStatus(`${t("status.update.failed")}: ${message}`);
     }
   }
 
@@ -72,7 +64,6 @@ export default function UpdaterWidget({ onStatus }: Props) {
 
     setPhase("downloading");
     resetProgress();
-    onStatus(t("status.update.downloading"));
 
     try {
       await updateRef.current.downloadAndInstall((event: DownloadEvent) => {
@@ -97,13 +88,11 @@ export default function UpdaterWidget({ onStatus }: Props) {
         setProgressText(t("update.progress.finish"));
       });
 
-      onStatus(t("status.update.installed"));
       await relaunch();
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
       setErrorText(message);
       setPhase("error");
-      onStatus(`${t("status.update.failed")}: ${message}`);
     }
   }
 
@@ -141,10 +130,9 @@ export default function UpdaterWidget({ onStatus }: Props) {
       {phase === "error" ? (
         <>
           <span className="status-chip warn">{errorText || t("status.update.failed")}</span>
-          <span className="hint">{t("update.mirror.fail.hint")}</span>
         </>
       ) : null}
-      {phase === "idle" || phase === "none" ? <span className="hint">{t("update.mirror.hint")}</span> : null}
+      {phase === "idle" || phase === "none" ? null : null}
     </div>
   );
 }

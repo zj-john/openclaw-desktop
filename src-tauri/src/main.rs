@@ -137,10 +137,26 @@ struct OpenOfficialWebResult {
 
 #[derive(Serialize, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
+struct SwitchToOpenClawUiResult {
+    switched: bool,
+    detail: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
+struct OpenEnterpriseSettingsResult {
+    opened: bool,
+    detail: String,
+}
+
+#[derive(Serialize, Deserialize, Clone)]
+#[serde(rename_all = "camelCase")]
 struct BootstrapStatus {
     ready: bool,
     installed: bool,
     initialized: bool,
+    #[serde(rename = "onboardingDone")]
+    onboarding_done: bool,
     web: OfficialWebStatus,
     message: String,
     logs: Vec<String>,
@@ -2169,6 +2185,20 @@ fn run_installer_script(app: &tauri::AppHandle, logs: &mut Vec<String>) -> Resul
 fn resolve_bundled_openclaw_dir(app: &tauri::AppHandle) -> Option<PathBuf> {
     let mut candidates: Vec<PathBuf> = Vec::new();
     let resolver = app.path();
+
+    // 方式 1：通过 resource_dir() 直接拼接（最可靠）
+    if let Ok(resource_dir) = resolver.resource_dir() {
+        // 打包后 resources 配置为 "bundle/resources/**/*"，所以实际路径是:
+        // Resources/bundle/resources/openclaw-bundle/
+        candidates.push(resource_dir.join("bundle").join("resources").join("openclaw-bundle"));
+        // 兜底：资源可能在 resource_dir 根目录
+        candidates.push(resource_dir.join("openclaw-bundle"));
+    }
+
+    // 方式 2：通过 resolve API（某些 Tauri 版本行为不同，作为备选）
+    if let Ok(path) = resolver.resolve("bundle/resources/openclaw-bundle", tauri::path::BaseDirectory::Resource) {
+        candidates.push(path);
+    }
     if let Ok(path) = resolver.resolve("openclaw-bundle", tauri::path::BaseDirectory::Resource) {
         candidates.push(path);
     }
@@ -2905,6 +2935,19 @@ fn install_openclaw_from_bundle_dir(
     }
 
     push_bootstrap_log(app, logs, "Installing OpenClaw from bundled offline payload...");
+    push_bootstrap_log(app, logs, format!("Using bundled node: {}", node_bin.to_string_lossy()));
+
+    // 将 bundle 内的 node 目录加入 PATH，确保 npm 子脚本（如 preinstall）也能找到 node
+    let node_parent = node_bin.parent()
+        .map(|p| p.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let current_path = std::env::var("PATH").unwrap_or_default();
+    let bundle_path = if node_parent.is_empty() {
+        current_path
+    } else {
+        format!("{}:{}", node_parent, current_path)
+    };
+
     let output = Command::new(&node_bin)
         .arg(&npm_cli)
         .arg("install")
@@ -2917,6 +2960,7 @@ fn install_openclaw_from_bundle_dir(
         .arg("--no-audit")
         .arg("--no-fund")
         .arg("--loglevel=error")
+        .env("PATH", &bundle_path)
         .output()
         .map_err(|err| format!("Failed to run bundled npm installer: {}", err))?;
 
@@ -3576,10 +3620,66 @@ async fn open_official_web_window(app: tauri::AppHandle) -> Result<OpenOfficialW
     })
 }
 
+/// 企业版核心：确保 OpenClaw 服务就绪后通知前端进入 Shell 界面。
+/// 不再打开 OpenClaw 原始 UI 窗口，桌面版使用自己的 Shell 界面。
+#[tauri::command]
+async fn switch_to_openclaw_ui(app: tauri::AppHandle) -> Result<SwitchToOpenClawUiResult, String> {
+    // 确保 OpenClaw Gateway 就绪
+    let web = ensure_official_web_ready().await;
+    if !web.ready {
+        let message = [web.error.clone().unwrap_or_default(), web.message]
+            .into_iter()
+            .filter(|item| !item.trim().is_empty())
+            .collect::<Vec<_>>()
+            .join(" | ");
+        return Err(if message.is_empty() {
+            "OpenClaw 服务未就绪。".to_string()
+        } else {
+            format!("OpenClaw 服务未就绪：{}", message)
+        });
+    }
+
+    // 关闭可能存在的旧 official-local-web 窗口
+    if let Some(old_window) = app.get_webview_window("official-local-web") {
+        let _ = old_window.close();
+    }
+
+    Ok(SwitchToOpenClawUiResult {
+        switched: true,
+        detail: "OpenClaw 服务已就绪。".to_string(),
+    })
+}
+
+/// 打开/显示企业设置窗口（main 窗口）。
+/// 从菜单栏或托盘触发，让用户回到配置界面。
+#[tauri::command]
+async fn open_enterprise_settings(app: tauri::AppHandle) -> Result<OpenEnterpriseSettingsResult, String> {
+    let main_label = "main";
+
+    if let Some(main_window) = app.get_webview_window(main_label) {
+        let _ = main_window.show();
+        let _ = main_window.set_focus();
+        Ok(OpenEnterpriseSettingsResult {
+            opened: true,
+            detail: "企业设置窗口已打开。".to_string(),
+        })
+    } else {
+        Err("企业设置窗口不存在，请重启应用。".to_string())
+    }
+}
+
 #[tauri::command]
 async fn bootstrap_openclaw(app: tauri::AppHandle) -> BootstrapStatus {
     let mut logs: Vec<String> = Vec::new();
     push_bootstrap_log(&app, &mut logs, "Bootstrap started.");
+
+    // 输出 resource_dir 用于调试打包后路径问题
+    if let Ok(resource_dir) = app.path().resource_dir() {
+        push_bootstrap_log(&app, &mut logs, format!("Resource dir: {}", resource_dir.to_string_lossy()));
+        let bundle_path = resource_dir.join("bundle").join("resources").join("openclaw-bundle");
+        push_bootstrap_log(&app, &mut logs, format!("Bundle candidate: {} (exists={})", bundle_path.to_string_lossy(), bundle_path.exists()));
+    }
+
     let mut installed = resolve_openclaw_binary().is_some();
     let installed_before = installed;
     let mut install_performed = false;
@@ -3623,6 +3723,7 @@ async fn bootstrap_openclaw(app: tauri::AppHandle) -> BootstrapStatus {
                     ready: false,
                     installed: false,
                     initialized: false,
+                    onboarding_done: false,
                     web,
                     message: "Auto install failed.".to_string(),
                     logs,
@@ -3649,6 +3750,7 @@ async fn bootstrap_openclaw(app: tauri::AppHandle) -> BootstrapStatus {
             ready: false,
             installed: false,
             initialized: false,
+            onboarding_done: false,
             web,
             message: "OpenClaw bootstrap failed.".to_string(),
             logs,
@@ -3657,35 +3759,80 @@ async fn bootstrap_openclaw(app: tauri::AppHandle) -> BootstrapStatus {
     };
 
     push_bootstrap_log(&app, &mut logs, format!("Using CLI binary: {}", binary));
-    if let Err(error) = ensure_openclaw_terminal_command(&app, &mut logs, &binary) {
-        push_bootstrap_log(
-            &app,
-            &mut logs,
-            format!("WARN: failed to prepare terminal `openclaw` command: {}", error),
-        );
-    }
-    if let Err(error) = ensure_browser_defaults(&app, &mut logs) {
-        push_bootstrap_log(
-            &app,
-            &mut logs,
-            format!("WARN: failed to ensure browser defaults: {}", error),
-        );
-    }
-    // Only install browser relay extension when using chrome profile mode (relay is not needed for openclaw profile mode)
-    {
-        let config_value = load_openclaw_config_value();
-        let default_profile = config_value
-            .pointer("/browser/defaultProfile")
-            .and_then(|v| v.as_str())
-            .unwrap_or("openclaw");
-        if default_profile.eq_ignore_ascii_case("chrome") {
-            ensure_browser_relay_installed(&app, &binary, &mut logs);
-        } else {
-            push_bootstrap_log(&app, &mut logs, "Browser relay skipped (profile mode, relay not needed).");
+
+    // 快速路径检测：如果 OpenClaw 已安装且 Onboarding 已完成，跳过耗时的环境准备步骤
+    let fast_path = installed_before && !install_performed && is_onboarding_completed();
+
+    if fast_path {
+        push_bootstrap_log(&app, &mut logs, "Fast path: onboarding completed, skipping terminal/browser setup.");
+    } else {
+        // 完整路径：首次启动或未完成 onboarding 时执行全部环境准备
+        if let Err(error) = ensure_openclaw_terminal_command(&app, &mut logs, &binary) {
+            push_bootstrap_log(
+                &app,
+                &mut logs,
+                format!("WARN: failed to prepare terminal `openclaw` command: {}", error),
+            );
+        }
+        if let Err(error) = ensure_browser_defaults(&app, &mut logs) {
+            push_bootstrap_log(
+                &app,
+                &mut logs,
+                format!("WARN: failed to ensure browser defaults: {}", error),
+            );
+        }
+        // Only install browser relay extension when using chrome profile mode (relay is not needed for openclaw profile mode)
+        {
+            let config_value = load_openclaw_config_value();
+            let default_profile = config_value
+                .pointer("/browser/defaultProfile")
+                .and_then(|v| v.as_str())
+                .unwrap_or("openclaw");
+            if default_profile.eq_ignore_ascii_case("chrome") {
+                ensure_browser_relay_installed(&app, &binary, &mut logs);
+            } else {
+                push_bootstrap_log(&app, &mut logs, "Browser relay skipped (profile mode, relay not needed).");
+            }
         }
     }
 
     if installed_before && !install_performed {
+        // 检查用户是否已完成 Onboarding 向导
+        let onboarded = is_onboarding_completed();
+        push_bootstrap_log(&app, &mut logs, format!("Onboarding completed: {}", onboarded));
+
+        if onboarded {
+            // 用户已完成 Onboarding，跳过 setup/onboard，直接启动 gateway
+            push_bootstrap_log(&app, &mut logs, "Skipping setup/onboard (onboarding already completed).");
+            push_bootstrap_log(&app, &mut logs, "Ensuring gateway start...");
+            if let Err(error) = run_openclaw(&app, &binary, &["gateway", "start"], &mut logs) {
+                push_bootstrap_log(&app, &mut logs, format!("WARN: {}", error));
+            }
+            // 快速路径：不阻塞等待 gateway HTTP 就绪，先返回让 UI 进入主界面
+            // gateway 已在后台启动，Web UI 可通过后续加载自行连接
+            let web = OfficialWebStatus {
+                ready: true, // 假设就绪，让前端直接跳转；如果 gateway 未就绪，前端可显示 loading
+                installed: true,
+                running: true,
+                started: false,
+                url: resolve_official_dashboard_url(),
+                command_hint: "openclaw gateway".to_string(),
+                message: "Gateway started (fast path).".to_string(),
+                error: None,
+            };
+            return BootstrapStatus {
+                ready: true,
+                installed: true,
+                initialized: true,
+                onboarding_done: true,
+                web: web.clone(),
+                message: "OpenClaw is ready.".to_string(),
+                logs,
+                error: None,
+            };
+        }
+
+        // 未完成 Onboarding，检查现有状态
         push_bootstrap_log(&app, &mut logs, "Checking existing gateway status...");
         if let Err(error) = run_openclaw(&app, &binary, &["gateway", "start"], &mut logs) {
             push_bootstrap_log(&app, &mut logs, format!("WARN: {}", error));
@@ -3697,6 +3844,7 @@ async fn bootstrap_openclaw(app: tauri::AppHandle) -> BootstrapStatus {
                 ready: true,
                 installed: true,
                 initialized: true,
+                onboarding_done: false,
                 web: web.clone(),
                 message: "OpenClaw is ready.".to_string(),
                 logs,
@@ -3839,6 +3987,7 @@ async fn bootstrap_openclaw(app: tauri::AppHandle) -> BootstrapStatus {
         ready,
         installed,
         initialized,
+        onboarding_done: false,
         web: web.clone(),
         message: if ready {
             "OpenClaw is installed and official local web is ready."
@@ -3922,6 +4071,7 @@ async fn bootstrap_openclaw_with_selected_bundle(
             ready: false,
             installed: false,
             initialized: false,
+            onboarding_done: false,
             web: OfficialWebStatus {
                 ready: false,
                 installed: false,
@@ -3944,6 +4094,7 @@ async fn bootstrap_openclaw_with_selected_bundle(
             ready: false,
             installed: false,
             initialized: false,
+            onboarding_done: false,
             web: OfficialWebStatus {
                 ready: false,
                 installed: false,
@@ -3969,6 +4120,7 @@ async fn bootstrap_openclaw_with_selected_bundle(
                     ready: false,
                     installed: false,
                     initialized: false,
+                    onboarding_done: false,
                     web: OfficialWebStatus {
                         ready: false,
                         installed: false,
@@ -3990,6 +4142,7 @@ async fn bootstrap_openclaw_with_selected_bundle(
                     ready: false,
                     installed: false,
                     initialized: false,
+                    onboarding_done: false,
                     web: OfficialWebStatus {
                         ready: false,
                         installed: false,
@@ -4020,6 +4173,7 @@ async fn bootstrap_openclaw_with_selected_bundle(
                 ready: false,
                 installed: false,
                 initialized: false,
+                onboarding_done: false,
                 web: OfficialWebStatus {
                     ready: false,
                     installed: false,
@@ -4040,6 +4194,7 @@ async fn bootstrap_openclaw_with_selected_bundle(
                 ready: false,
                 installed: false,
                 initialized: false,
+                onboarding_done: false,
                 web: OfficialWebStatus {
                     ready: false,
                     installed: false,
@@ -4147,6 +4302,34 @@ fn save_api_key(
         serde_json::Value::Object(next_provider_obj),
     );
 
+    // 企业版策略：为用户配置的 provider 生成 models 数组
+    // 确保聊天框模型列表只显示用户配置的模型，而非 OpenClaw 内置的全部模型
+    let model_id = normalized_default_model.split('/').last().unwrap_or(&normalized_default_model);
+    let provider_models = serde_json::json!([
+        {
+            "id": model_id,
+            "name": model_id,
+            "contextWindow": 128000,
+            "maxTokens": 8192,
+            "input": ["text"]
+        }
+    ]);
+    if let Some(provider) = providers_obj.get_mut(&normalized_provider_id) {
+        if let Some(obj) = provider.as_object_mut() {
+            obj.insert("models".to_string(), provider_models);
+        }
+    }
+
+    // 清理多余 provider：移除 OpenClaw 初始化时自动写入的其他 provider
+    let extra_provider_ids: Vec<String> = providers_obj
+        .keys()
+        .filter(|id| *id != &normalized_provider_id)
+        .cloned()
+        .collect();
+    for extra_id in &extra_provider_ids {
+        providers_obj.remove(extra_id);
+    }
+
     let agents_entry = config_obj
         .entry("agents".to_string())
         .or_insert_with(|| serde_json::json!({}));
@@ -4182,6 +4365,27 @@ fn save_api_key(
                 "primary": normalized_default_model.clone()
             });
         }
+    }
+
+    // 企业版策略：清理 agents.defaults.models 中的旧模型注册表
+    // 只保留用户当前配置的模型，移除 OpenClaw 自动写入的其他模型（如 volcengine-plan/*）
+    let full_model_id = format!("{}/{}", normalized_provider_id, model_id);
+    if let Some(models_entry) = defaults_obj.get_mut("models") {
+        if let Some(models_obj) = models_entry.as_object_mut() {
+            // 清除所有旧条目，只写入用户配置的模型
+            models_obj.clear();
+            models_obj.insert(
+                full_model_id.clone(),
+                serde_json::json!({}),
+            );
+        } else {
+            *models_entry = serde_json::json!({ full_model_id: {} });
+        }
+    } else {
+        defaults_obj.insert(
+            "models".to_string(),
+            serde_json::json!({ full_model_id: {} }),
+        );
     }
 
     save_openclaw_config_value(&config_value)?;
@@ -4496,6 +4700,270 @@ fn save_feishu_channel_config(app_id: String, app_secret: String) -> Result<Feis
     get_feishu_channel_status()
 }
 
+/// 通用渠道配置保存（企业版）
+/// 将任意渠道的配置写入 openclaw.json 的 channels 字段
+#[tauri::command]
+fn save_channel_config(channel_id: String, config_json: String) -> Result<serde_json::Value, String> {
+    let channel_id_trimmed = channel_id.trim().to_string();
+    if channel_id_trimmed.is_empty() {
+        return Err("channel_id must not be empty.".to_string());
+    }
+
+    // 解析前端传来的渠道配置 JSON
+    let channel_config: serde_json::Value = serde_json::from_str(&config_json)
+        .map_err(|err| format!("Invalid channel config JSON: {}", err))?;
+
+    let mut config_value = load_openclaw_config_value();
+    if !config_value.is_object() {
+        config_value = serde_json::json!({});
+    }
+
+    let config_obj = config_value
+        .as_object_mut()
+        .ok_or_else(|| "Failed to parse OpenClaw config root object.".to_string())?;
+
+    let channels_entry = config_obj
+        .entry("channels".to_string())
+        .or_insert_with(|| serde_json::json!({}));
+    if !channels_entry.is_object() {
+        *channels_entry = serde_json::json!({});
+    }
+
+    let channels_obj = channels_entry
+        .as_object_mut()
+        .ok_or_else(|| "Failed to parse channels object.".to_string())?;
+
+    // 写入渠道配置，附加元数据
+    let mut entry = channel_config.as_object().cloned().unwrap_or_default();
+    entry.insert("enabled".to_string(), serde_json::json!(true));
+    entry.insert("configured_at".to_string(), {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        serde_json::Value::String(format!("{}", now_ms))
+    });
+
+    channels_obj.insert(channel_id_trimmed.clone(), serde_json::Value::Object(entry));
+
+    save_openclaw_config_value(&config_value)?;
+
+    Ok(serde_json::json!({
+        "channelId": channel_id_trimmed,
+        "enabled": true,
+        "configured": true
+    }))
+}
+
+/// 解析桌面端元数据存储路径（独立文件，不污染 openclaw.json）
+fn resolve_desktop_meta_path() -> PathBuf {
+    resolve_openclaw_state_dir().join("desktop-meta.json")
+}
+
+/// 加载桌面端元数据
+fn load_desktop_meta() -> serde_json::Value {
+    let path = resolve_desktop_meta_path();
+    if !path.exists() {
+        return serde_json::json!({});
+    }
+    let content = fs::read_to_string(&path).unwrap_or_default();
+    serde_json::from_str::<serde_json::Value>(&content).unwrap_or_else(|_| serde_json::json!({}))
+}
+
+/// 保存桌面端元数据
+fn save_desktop_meta(value: &serde_json::Value) -> Result<(), String> {
+    let path = resolve_desktop_meta_path();
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|err| format!("Failed to create desktop meta dir: {}", err))?;
+    }
+    fs::write(
+        &path,
+        serde_json::to_string_pretty(value)
+            .map_err(|err| format!("Failed to serialize desktop meta: {}", err))?,
+    )
+    .map_err(|err| format!("Failed to write desktop meta {}: {}", path.to_string_lossy(), err))
+}
+
+/// 标记渠道配置为"已跳过"
+/// 注意：存储在独立文件 ~/.openclaw/desktop-meta.json，不污染 openclaw.json
+#[tauri::command]
+fn skip_channel_config() -> Result<serde_json::Value, String> {
+    let mut meta_value = load_desktop_meta();
+
+    let meta_obj = meta_value
+        .as_object_mut()
+        .ok_or_else(|| "Failed to parse desktop meta root object.".to_string())?;
+
+    meta_obj.insert("channels_skipped".to_string(), serde_json::json!(true));
+
+    save_desktop_meta(&meta_value)?;
+
+    Ok(serde_json::json!({
+        "skipped": true,
+        "message": "渠道配置已标记为跳过"
+    }))
+}
+
+/// 标记 Onboarding 向导已完成
+/// 存储在独立文件 ~/.openclaw/desktop-meta.json
+#[tauri::command]
+fn mark_onboarding_completed() -> Result<serde_json::Value, String> {
+    let mut meta_value = load_desktop_meta();
+
+    let meta_obj = meta_value
+        .as_object_mut()
+        .ok_or_else(|| "Failed to parse desktop meta root object.".to_string())?;
+
+    meta_obj.insert("onboarding_completed".to_string(), serde_json::json!(true));
+    meta_obj.insert("onboarding_completed_at".to_string(), {
+        let now_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_millis();
+        serde_json::Value::String(format!("{}", now_ms))
+    });
+
+    save_desktop_meta(&meta_value)?;
+
+    Ok(serde_json::json!({
+        "completed": true,
+        "message": "Onboarding 已标记为完成"
+    }))
+}
+
+/// 检查 Onboarding 是否已完成
+fn is_onboarding_completed() -> bool {
+    let meta_value = load_desktop_meta();
+    meta_value
+        .get("onboarding_completed")
+        .and_then(|v| v.as_bool())
+        .unwrap_or(false)
+}
+
+/// 获取 OpenClaw Web UI 的 URL（供前端内嵌显示）
+/// 不再阻塞等待 gateway 就绪，直接返回 URL 让前端自行导航
+/// （gateway 已在 bootstrap 阶段通过 `gateway start` 后台启动）
+#[tauri::command]
+async fn get_openclaw_web_url() -> Result<serde_json::Value, String> {
+    // 非阻塞快速检测：检查一次 gateway 是否就绪
+    if is_official_web_ready().await {
+        let url = resolve_official_dashboard_url();
+        return Ok(serde_json::json!({
+            "url": url,
+            "ready": true,
+            "running": true,
+        }));
+    }
+
+    // Gateway 可能还在启动中，用 std::thread::sleep 做极短等待（总计最多 2 秒）
+    for _ in 0..4u32 {
+        std::thread::sleep(Duration::from_millis(500));
+        if is_official_web_ready().await {
+            let url = resolve_official_dashboard_url();
+            return Ok(serde_json::json!({
+                "url": url,
+                "ready": true,
+                "running": true,
+            }));
+        }
+    }
+
+    // 等待超时也返回 URL，让前端页面自行处理 loading 状态
+    let url = resolve_official_dashboard_url();
+    Ok(serde_json::json!({
+        "url": url,
+        "ready": false, // 提示前端 gateway 可能还在启动
+        "running": is_gateway_process_alive(),
+    }))
+}
+
+/// 读取企业版 Skills 白名单配置（enterprise-skills.json）
+#[tauri::command]
+fn get_enterprise_skills(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
+    let resource_dir = app
+        .path()
+        .resource_dir()
+        .map_err(|err| format!("Failed to resolve resource dir: {}", err))?;
+
+    // 尝试多个可能的资源路径（打包后资源在 bundle/resources/ 下）
+    let candidates: Vec<PathBuf> = vec![
+        resource_dir.join("bundle").join("resources").join("enterprise-skills.json"),
+        resource_dir.join("enterprise-skills.json"),
+    ];
+
+    let resource_path = match candidates.into_iter().find(|p| p.exists()) {
+        Some(p) => p,
+        None => {
+            return Ok(serde_json::json!({
+                "config": {
+                    "version": 2,
+                    "lastUpdated": "2026-07-09",
+                    "categories": [
+                        {
+                            "id": "daily",
+                            "name": "日常办公",
+                            "description": "提升日常工作效率的基础技能",
+                            "skills": [
+                                {"id": "summarize", "name": "内容摘要", "description": "自动总结文档、邮件和对话要点", "defaultEnabled": true},
+                                {"id": "translate", "name": "多语言翻译", "description": "支持中英日韩等多语言互译"},
+                                {"id": "calendar", "name": "日程管理", "description": "自动创建和同步日历事件"}
+                            ]
+                        },
+                        {
+                            "id": "communication",
+                            "name": "通讯协作",
+                            "description": "与团队沟通和消息平台集成",
+                            "skills": [
+                                {"id": "feishu-lark", "name": "飞书 / Lark", "description": "飞书消息收发与机器人交互", "platform": "需配置飞书应用凭据"},
+                                {"id": "wechat-work", "name": "企业微信", "description": "企业微信消息集成", "platform": "需配置企业微信应用"},
+                                {"id": "email-assist", "name": "邮件助手", "description": "邮件撰写、回复和整理"}
+                            ]
+                        },
+                        {
+                            "id": "productivity",
+                            "name": "效率工具",
+                            "description": "文档处理和信息管理",
+                            "skills": [
+                                {"id": "document-edit", "name": "文档编辑", "description": "Word/文档格式化与内容生成"},
+                                {"id": "spreadsheet", "name": "表格处理", "description": "Excel 数据分析和公式生成"},
+                                {"id": "presentation", "name": "演示文稿", "description": "PPT 大纲和内容生成"}
+                            ]
+                        },
+                        {
+                            "id": "system",
+                            "name": "系统工具",
+                            "description": "设备管理和安全相关",
+                            "skills": [
+                                {"id": "password-manager", "name": "密码管理", "description": "安全存储和管理各类账号密码", "defaultEnabled": true},
+                                {"id": "file-organizer", "name": "文件整理", "description": "自动分类和整理本地文件"},
+                                {"id": "apple-ecosystem", "name": "Apple 全家桶", "description": "macOS/iOS 生态深度集成（提醒事项、备忘录等）", "platform": "macOS only"},
+                                {"id": "security-audit", "name": "安全检查", "description": "系统安全和隐私设置检查建议"}
+                            ]
+                        }
+                    ],
+                    "blacklist": [
+                        {"id": "coding-agent", "reason": "面向开发人员，非技术用户不需要"},
+                        {"id": "github", "reason": "面向开发人员，非技术用户不需要"},
+                        {"id": "terminal-cmd", "reason": "需要命令行知识，不适合普通用户"},
+                        {"id": "docker-k8s", "reason": "运维开发工具，非目标用户群体"},
+                        {"id": "meme-maker", "reason": "非生产力工具"},
+                        {"id": "camsnap", "reason": "涉及摄像头权限，隐私风险"},
+                        {"id": "peekaboo", "reason": "屏幕监控功能，违反隐私政策"}
+                    ]
+                }
+            }));
+        }
+    };
+
+    let content = std::fs::read_to_string(&resource_path)
+        .map_err(|err| format!("Failed to read enterprise-skills.json: {}", err))?;
+    let skills_config: serde_json::Value = serde_json::from_str(&content)
+        .map_err(|err| format!("Failed to parse enterprise-skills.json: {}", err))?;
+
+    Ok(serde_json::json!({ "config": skills_config }))
+}
+
 fn main() {
     tauri::Builder::default()
         .plugin(tauri_plugin_process::init())
@@ -4522,7 +4990,14 @@ fn main() {
             validate_local_codex_connectivity,
             get_feishu_channel_status,
             install_feishu_plugin,
-            save_feishu_channel_config
+            save_feishu_channel_config,
+            switch_to_openclaw_ui,
+            open_enterprise_settings,
+            save_channel_config,
+            skip_channel_config,
+            get_enterprise_skills,
+            mark_onboarding_completed,
+            get_openclaw_web_url
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
