@@ -1,0 +1,5 @@
+# macOS 上交叉编译 Windows 目标的配置
+# cargo-xwin 会自动下载 Windows SDK 和 CRT，无需手动配置
+
+[target.x86_64-pc-windows-msvc]
+rustflags = []

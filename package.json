@@ -1,5 +1,5 @@
 {
-  "name": "openclaw-desktop",
+  "name": "openclaw-app",
   "version": "1.0.0",
   "private": true,
   "type": "module",
@@ -17,8 +17,8 @@
     "build:mac": "npm run prepare:openclaw-bundle && tauri build --target universal-apple-darwin",
     "build:mac-intel": "npm run prepare:openclaw-bundle && tauri build --target x86_64-apple-darwin",
     "build:mac-arm": "npm run prepare:openclaw-bundle && tauri build --target aarch64-apple-darwin",
-    "build:windows": "npm run prepare:openclaw-bundle && tauri build --target x86_64-msi",
-    "build:all": "npm run prepare:openclaw-bundle && tauri build --target universal-apple-darwin,x86_64-msi"
+    "build:windows": "bash scripts/build-windows.sh",
+    "build:all": "npm run prepare:openclaw-bundle && tauri build --target universal-apple-darwin"
   },
   "dependencies": {
     "@tauri-apps/api": "^2.3.0",
