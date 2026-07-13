@@ -4,6 +4,9 @@
 
 `openclaw-desktop` 是面向普通用户的 OpenClaw 桌面版，目标是「安装即用、零门槛」。
 
+> **仓库地址**: [github.com/zj-john/openclaw-desktop](https://github.com/zj-john/openclaw-desktop)  
+> **Release 下载**: [Releases 页面](https://github.com/zj-john/openclaw-desktop/releases)
+
 ## 这个项目的好处
 
 - 零依赖体感：用户安装一个桌面包即可，不需要先手动装一堆 CLI 和环境。
@@ -14,7 +17,7 @@
 
 ## 用户快速开始
 
-1. 打开 Releases 页面下载对应系统安装包。
+1. 打开 [Releases](https://github.com/zj-john/openclaw-desktop/releases) 页面下载对应系统安装包。
 2. 安装并启动 `openclaw-desktop`。
 3. 在引导页选择登录方式：
    - API Key（可对接国内兼容端点）
@@ -35,7 +38,7 @@
    - 选择你已经下载好的 `openclaw-desktop-windows-portable.zip`。
    - 程序会自动提取并安装离线载荷，然后继续初始化。
 
-为什么 Windows 还会出现“安装包内离线载荷不可用”：
+为什么 Windows 还会出现"安装包内离线载荷不可用"：
 
 - Windows 的打包链路里，资源注入偶发失败/路径不稳定（表现为构建产物里缺少 `openclaw-bundle`）。
 - 为避免用户被阻塞，我们增加了运行时自动下载兜底 + 手动选择 portable 兜底，两条路径都不要求用户手动配环境。
@@ -56,7 +59,7 @@ npm run test:windows-portable -- C:\\path\\to\\openclaw-desktop-windows-portable
 应用顶部已内置在线更新入口：
 
 - 启动后自动静默检测新版本。
-- 检测到新版本时，出现“更新并重启”按钮。
+- 检测到新版本时，出现"更新并重启"按钮。
 - 用户点击后自动下载、安装并重启应用，无需重新下载安装包。
 
 ### 首次配置（只做一次）

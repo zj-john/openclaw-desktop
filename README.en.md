@@ -5,6 +5,9 @@ Default Chinese docs: [README.md](./README.md)
 `openclaw-desktop` is a zero-friction desktop wrapper for OpenClaw.
 The goal is simple: install once, use immediately.
 
+> **Repository**: [github.com/zj-john/openclaw-desktop](https://github.com/zj-john/openclaw-desktop)  
+> **Download**: [Releases page](https://github.com/zj-john/openclaw-desktop/releases)
+
 ## Why this project
 
 - Zero setup feeling: users install one desktop app, no manual dependency chain.
@@ -16,7 +19,7 @@ The goal is simple: install once, use immediately.
 
 ## Quick Start
 
-1. Download the package for your OS from GitHub Releases.
+1. Download the package for your OS from [GitHub Releases](https://github.com/zj-john/openclaw-desktop/releases).
 2. Install and launch `openclaw-desktop`.
 3. Choose a login mode in onboarding:
    - OAuth (Codex / Claude / Gemini / Qwen Portal)
@@ -55,12 +58,6 @@ npm run test:windows-portable
 # verify a local zip you already downloaded
 npm run test:windows-portable -- C:\\path\\to\\openclaw-desktop-windows-portable.zip
 ```
-
-## Community Group
-
-Scan the QR code to join the `openclaw` community chat group:
-
-![openclaw community group QR code](./src/assets/wechat.jpg)
 
 ## In-App Updates (auto-detect + one click)
 
