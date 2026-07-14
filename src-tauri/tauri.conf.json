@@ -55,7 +55,7 @@
         "https://github.com/zj-john/openclaw-desktop/releases/latest/download/latest.json",
         "https://ghfast.top/https://github.com/zj-john/openclaw-desktop/releases/latest/download/latest.json"
       ],
-      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IDY4MDBFMUM1NzQ2Mjg2MDAKUldRQWhtSjB4ZUVBYURFeUZUYWVTQk1HV2NJM0NJT1I0Wm0vVWpidmJjV1pKZ2xOdEx2MG1ndDgK",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEU0OTFBQTI2NUEyMEEwQzIKUldUQ29DQmFKcXFSNUNSclhEVGRYSEVrWE9jQVpvN0FQTXhGdnlFbWlxVDN6R3RaQjJlK01vL1UK",
       "windows": {
         "installMode": "passive"
       }
