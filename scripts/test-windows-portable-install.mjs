@@ -290,7 +290,11 @@ async function main() {
     runOpenclaw(openclawBin, ["--version"], { env: appEnv }, nodePath);
 
     console.log("[test] run openclaw setup...");
-    runOpenclaw(openclawBin, ["setup"], { env: appEnv }, nodePath);
+    // Windows 原生环境需要非交互模式，避免 TTY 要求
+    const setupArgs = process.platform === "win32"
+      ? ["setup", "--non-interactive", "--accept-risk"]
+      : ["setup"];
+    runOpenclaw(openclawBin, setupArgs, { env: appEnv }, nodePath);
 
     console.log("[test] start gateway and verify official local page...");
     const gatewayArgs = ["gateway", "run", "--allow-unconfigured", "--port", "18789", "--verbose"];
